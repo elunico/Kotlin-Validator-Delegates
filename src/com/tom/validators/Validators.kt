@@ -13,6 +13,8 @@ private operator fun <T> ((T) -> Boolean).not(): (T) -> Boolean {
 }
 
 
+typealias Reason = kotlin.String
+
 /**
  * Object containing the classes and helper functions that work as validators
  * The actual object is not used, it is only used for namespacing
@@ -31,9 +33,9 @@ object Validators {
      * as any other (T) -> Boolean
      */
     data class DescribedPredicate<T>(
-        val description: kotlin.String,
-        val predicate: (T) -> Boolean
-    ) : (T) -> Boolean by predicate
+      val description: kotlin.String,
+      val predicate: (T) -> Boolean
+    ): (T) -> Boolean by predicate
 
     /**
      * Ties a string and a (T) -> Boolean together in a [DescribedPredicate]
@@ -68,15 +70,14 @@ object Validators {
      * Classes can extend this class and override [validate] to create a Validator
      * [validate] will throw on invalid data see the method for more
      */
-    abstract class Validator<R, T>(protected var initValue: T) : ReadWriteProperty<R, T> {
+    abstract class Validator<R, T>(protected var initValue: T): ReadWriteProperty<R, T> {
 
         override operator fun getValue(thisRef: R, property: KProperty<*>): T {
             return initValue
         }
 
         override operator fun setValue(thisRef: R, property: KProperty<*>, value: T) {
-            validate(value)
-            initValue = value
+            initValue = value.also { validate(it) }
         }
 
         /**
@@ -104,11 +105,11 @@ object Validators {
      * See [Validator] and [Validator.validate] for more about how validation is handled
      */
     class Integer<R>(
-        initValue: Int,
-        val minimum: Int = Int.MIN_VALUE,
-        val maximum: Int = Int.MAX_VALUE,
-        val predicates: List<DescribedPredicate<Int>> = listOf()
-    ) : Validator<R, Int>(initValue) {
+      initValue: Int,
+      val minimum: Int = Int.MIN_VALUE,
+      val maximum: Int = Int.MAX_VALUE,
+      val predicates: List<DescribedPredicate<Int>> = listOf()
+    ): Validator<R, Int>(initValue) {
 
         init {
             validate(initValue)
@@ -142,7 +143,7 @@ object Validators {
      *
      * See [Validator] and [Validator.validate] for more about how validation is handled
      */
-    class AnyOf<R, T> internal constructor(initValue: T, val choices: Set<T>) : Validator<R, T>(initValue) {
+    class AnyOf<R, T> internal constructor(initValue: T, val choices: Set<T>): Validator<R, T>(initValue) {
 
         init {
             validate(initValue)
@@ -152,13 +153,13 @@ object Validators {
         /**
          * Creates an AnyOf with the choices given with an initial value of the first element
          */
-        constructor(vararg choices: T) : this(choices[0], choices.toSet())
+        constructor(vararg choices: T): this(choices[0], choices.toSet())
 
         /**
          * Creates an AnyOf with the choices given with an initial value of the first element
          */
-        constructor(choices: List<T>) : this(choices[0], choices.toSet())
-        constructor(initialValue: T, choices: List<T>) : this(initialValue, choices.toSet())
+        constructor(choices: List<T>): this(choices[0], choices.toSet())
+        constructor(initialValue: T, choices: List<T>): this(initialValue, choices.toSet())
 
         override fun validate(data: T) {
             if (data !in choices) {
@@ -188,7 +189,7 @@ object Validators {
      *
      * See [Validator] and [Validator.validate] for more about how validation is handled
      */
-    class NoneOf<R, T> internal constructor(initialValue: T, val choices: Set<T>) : Validator<R, T>(initialValue) {
+    class NoneOf<R, T> internal constructor(initialValue: T, val choices: Set<T>): Validator<R, T>(initialValue) {
 
         init {
             validate(initialValue)
@@ -197,13 +198,13 @@ object Validators {
         /**
          * Creates an NoneOf with the choices given with an initial value of the first element
          */
-        constructor(vararg choices: T) : this(choices[0], choices.toSet())
+        constructor(vararg choices: T): this(choices[0], choices.toSet())
 
         /**
          * Creates an NoneOf with the choices given with an initial value of the first element
          */
-        constructor(choices: List<T>) : this(choices[0], choices.toSet())
-        constructor(initValue: T, choices: List<T>) : this(initValue, choices.toSet())
+        constructor(choices: List<T>): this(choices[0], choices.toSet())
+        constructor(initValue: T, choices: List<T>): this(initValue, choices.toSet())
 
         override fun validate(data: T) {
             if (data in choices) {
@@ -230,15 +231,15 @@ object Validators {
      * or with [DescribedPredicate.description] if a [DescribedPredicate]
      * is given.
      */
-    class Predicated<R, T>(initialValue: T, val predicate: (T) -> Boolean) : Validator<R, T>(initialValue) {
+    class Predicated<R, T>(initialValue: T, val predicate: (T) -> Boolean): Validator<R, T>(initialValue) {
 
         init {
             validate(initialValue)
         }
 
-        constructor(initValue: T, describedPredicate: DescribedPredicate<T>) : this(
-            initValue,
-            describedPredicate as (T) -> Boolean
+        constructor(initValue: T, describedPredicate: DescribedPredicate<T>): this(
+          initValue,
+          describedPredicate as (T) -> Boolean
         )
 
         override fun validate(data: T) {
@@ -306,7 +307,7 @@ object Validators {
      *
      * Note that minimum and maximum are both inclusive in this class
      */
-    open class Constraint<T> where T : Comparable<T>, T : Any {
+    open class Constraint<T> where T: Comparable<T>, T: Any {
         // only null in object of unbound()
         // not checked in that subclass
         private var _minimum: T? = null
@@ -331,7 +332,7 @@ object Validators {
              * The [valid] method will always return true
              */
             @JvmStatic
-            fun <T : Comparable<T>> unbound(): Constraint<T> = object : Constraint<T>() {
+            fun <T: Comparable<T>> unbound(): Constraint<T> = object: Constraint<T>() {
                 override fun valid(value: T) = true
             }
         }
@@ -417,7 +418,7 @@ object Validators {
      * Enumeration representing commonly used classes of Chars for use in [MustHave] objects in
      * [String] validators
      */
-    open class CharClass(val isMember: (Char) -> Boolean) : (Char) -> Boolean by isMember {
+    open class CharClass(val isMember: (Char) -> Boolean): (Char) -> Boolean by isMember {
         //@formatter:off
         companion object {
             @JvmStatic val whitespace = CharClass(Char::isWhitespace)
@@ -462,29 +463,14 @@ object Validators {
     open class MustHave(vararg rules: StringContentsRule) {
         val maps: List<StringContentsRule> = rules.toList()
 
-        fun valid(string: kotlin.String): Boolean {
-            var ok = true
-            for (item in maps) {
-                // TODO: This needs better error messages
-                when (item) {
-                    is StringContentsRule.AtLeast -> {
-                        for ((type, count) in item.entries) {
-                            ok = ok && string.count { type.isMember(it) } >= count
-                        }
-                    }
-                    is StringContentsRule.Exactly -> {
-                        for ((type, count) in item.entries) {
-                            ok = ok && string.count { type.isMember(it) } == count
-                        }
-                    }
-                    is StringContentsRule.AtMost -> {
-                        for ((type, count) in item.entries) {
-                            ok = ok && string.count { type.isMember(it) } <= count
-                        }
-                    }
+        fun isValid(data: kotlin.String): Pair<Boolean, Reason?> {
+            for (rule in maps) {
+                val (valid, reason) = rule.test(data)
+                if (!valid) {
+                    return valid to reason
                 }
             }
-            return ok
+            return true to null
         }
     }
 
@@ -494,29 +480,58 @@ object Validators {
      *
      * Used by [MustHave] for [String] Validators
      */
-    sealed class StringContentsRule(vararg pairs: Pair<CharClass, Int>) : Map<CharClass, Int> by mapOf(*pairs) {
+    sealed class StringContentsRule(vararg pairs: Pair<CharClass, Int>): Map<CharClass, Int> by mapOf(*pairs) {
 
         /**
          * Represents a map of [CharClass] to [Int] that specifies a string must contain
          * at least a certain number of characters from a [CharClass]
          */
-        class AtLeast internal constructor(vararg pairs: Pair<CharClass, Int>) : StringContentsRule(*pairs)
+        class AtLeast internal constructor(vararg pairs: Pair<CharClass, Int>): StringContentsRule(*pairs) {
+            override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
+                for ((type, count) in entries) {
+                    if (s.count { type.isMember(it) } < count) {
+                        return false to "String requires at least $count characters of class $type"
+                    }
+                }
+                return true to null
+            }
+        }
 
         /**
          * Represents a map of [CharClass] to [Int] that specifies a string must contain
          * at most a certain number of characters from a [CharClass]
          */
-        class AtMost internal constructor(vararg pairs: Pair<CharClass, Int>) : StringContentsRule(*pairs)
+        class AtMost internal constructor(vararg pairs: Pair<CharClass, Int>): StringContentsRule(*pairs) {
+            override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
+                for ((type, count) in entries) {
+                    if (s.count { type.isMember(it) } > count) {
+                        return false to "String requires at most $count characters of class $type"
+                    }
+                }
+                return true to null
+            }
+        }
 
         /**
          * Represents a map of [CharClass] to [Int] that specifies a string must contain
          * exactly a certain number of characters from a [CharClass]
          */
-        class Exactly internal constructor(vararg pairs: Pair<CharClass, Int>) : StringContentsRule(*pairs)
+        class Exactly internal constructor(vararg pairs: Pair<CharClass, Int>): StringContentsRule(*pairs) {
+            override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
+                for ((type, count) in entries) {
+                    if (s.count { type.isMember(it) } != count) {
+                        return false to "String requires exactly $count characters of class $type"
+                    }
+                }
+                return true to null
+            }
+        }
 
         override fun toString(): kotlin.String {
             return "[${entries.joinToString(", ") { (key, value) -> "$key: $value" }}]"
         }
+
+        abstract fun test(s: kotlin.String): Pair<Boolean, Reason?>
     }
 
     /**
@@ -577,7 +592,7 @@ object Validators {
      * including user-defined subclasses if they operate with Constraints
      */
     fun no(vararg classes: CharClass) =
-        exactly(*classes.map { it to 0 }.toTypedArray())
+      exactly(*classes.map { it to 0 }.toTypedArray())
 
     /**
      * Represents a delegate that validates [kotlin.String]
@@ -606,10 +621,10 @@ object Validators {
      * See [Validator] and [Validator.validate] for more about how validation is handled
      */
     class String<R>(
-        initValue: kotlin.String,
-        val lengthConstraint: Constraint<Int> = Constraint.unbound(),
-        val mustHave: MustHave
-    ) : Validator<R, kotlin.String>(initValue) {
+      initValue: kotlin.String,
+      val lengthConstraint: Constraint<Int> = Constraint.unbound(),
+      val mustHave: MustHave
+    ): Validator<R, kotlin.String>(initValue) {
 
         init {
             validate(initValue)
@@ -619,8 +634,9 @@ object Validators {
             if (!lengthConstraint.valid(data.length)) {
                 throw IllegalArgumentException("$data length is invalid. Must be between ${lengthConstraint.minimum} and ${lengthConstraint.maximum}")
             }
-            if (!mustHave.valid(data)) {
-                throw IllegalArgumentException("$data does not contain one or more of the required chars: ${mustHave.maps}")
+            val (hasAllValid, reason) = mustHave.isValid(data)
+            if (!hasAllValid) {
+                throw IllegalArgumentException(reason)
             }
         }
     }

@@ -1,6 +1,7 @@
 package com.tom.validators.example
 
 import com.tom.validators.Validators
+import com.tom.validators.Validators.CharClass.Companion.alphabetic
 import com.tom.validators.Validators.CharClass.Companion.specialCharacters
 import com.tom.validators.Validators.CharClass.Companion.whitespace
 import com.tom.validators.Validators.MustHave
@@ -21,8 +22,10 @@ import com.tom.validators.Validators.uppercaseLetters
 class Account(owner: Person?) {
     var balance: Int by Validators.Integer(initValue = 0, minimum = 0)
     val owner: Person? by Validators.Predicated(
-        owner,
-        Validators.ensure("Account owner must be at least 18") { (it?.age ?: 0) >= 18 }
+      owner,
+      Validators.ensure("Account owner must be at least 18") {
+          (it?.age ?: 0) >= 18
+      }
     )
 
 }
@@ -30,21 +33,21 @@ class Account(owner: Person?) {
 class Person(val name: String, var age: Int, username: String, password: String) {
 
     var username: String by Validators.String(
-        username,
-        between(5, 35),
-        MustHave(no(specialCharacters, whitespace))
+      username,
+      between(5, 35),
+      MustHave(no(specialCharacters, whitespace))
     )
 
     var loudName: String by Validators.String(
-        username.toUpperCase(),
-        // mustHave = MustHave(exactly(username.count{it.isLetter()}.charsSatisfying { it in 'A'..'Z' }))
-        mustHave = MustHave(exactly(username.count { it.isLetter() }.uppercaseLetters))
+      username.toUpperCase(),
+      // mustHave = MustHave(exactly(username.count{it.isLetter()}.charsSatisfying { it in 'A'..'Z' }))
+      mustHave = MustHave(exactly(username.count(alphabetic).uppercaseLetters))
     )
 
     var password: String by Validators.String(
-        password,
-        between(6, 20),
-        MustHave(atLeast(1.specialCharacters, 1.uppercaseLetters, 1.lowercaseLetters, 1.digits))
+      password,
+      between(6, 20),
+      MustHave(atLeast(1.specialCharacters, 1.uppercaseLetters, 1.lowercaseLetters, 1.digits))
     )
 }
 
