@@ -437,7 +437,7 @@ object Validators {
          * Used for natual-language predicate construction such as when saying
          * `MustHave(no(charsSatisfying { it in 'A'..'M' } ))`
          */
-        fun charsSatisfying(condition: (Char) -> Boolean): CharClass = CharClass(condition)
+        open fun charsSatisfying(condition: (Char) -> Boolean): CharClass = CharClass(condition)
 
         override fun toString(): kotlin.String {
             return "CharClass[${this::isMember.name}]"
@@ -461,9 +461,9 @@ object Validators {
      * on Int and the 4 helper functions which are then passed to the constructor
      */
     open class MustHave(vararg rules: StringContentsRule) {
-        val maps: List<StringContentsRule> = rules.toList()
+        open val maps: List<StringContentsRule> = rules.toList()
 
-        fun isValid(data: kotlin.String): Pair<Boolean, Reason?> {
+        open fun isValid(data: kotlin.String): Pair<Boolean, Reason?> {
             for (rule in maps) {
                 val (valid, reason) = rule.test(data)
                 if (!valid) {
