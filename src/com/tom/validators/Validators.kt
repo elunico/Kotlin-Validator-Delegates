@@ -43,7 +43,7 @@ object Validators {
      *
      * Notice that this class implements (T) -> Boolean so it can be passed anywhere
      * a (T) -> Boolean is also expected. Implementations can therefore choose to
-     * handle the is DescribedPredicate<*> case as [Predicated] does or simply treat it
+     * handle the is DescribedPredicate<*> case as [Requirements] does or simply treat it
      * as any other (T) -> Boolean
      */
     data class DescribedPredicate<T>(
@@ -298,7 +298,7 @@ object Validators {
      * Ties a string and a (T) -> Boolean together in a [DescribedPredicate]
      * Used as sugar for more natural-language-like construction of Validators
      */
-    fun <T> ensuring(first: kotlin.String, second: (T) -> Boolean): DescribedPredicate<T> {
+    fun <T> ensure(first: kotlin.String, second: (T) -> Boolean): DescribedPredicate<T> {
         return DescribedPredicate(first, second)
     }
 
@@ -306,7 +306,7 @@ object Validators {
      * Ties many strings and a ((T) -> Boolean)s together in a list of [DescribedPredicate]
      * Used as sugar for more natural-language-like construction of Validators
      */
-    fun <T> ensuring(vararg pairs: Pair<kotlin.String, (T) -> Boolean>): List<DescribedPredicate<T>> {
+    fun <T> ensure(vararg pairs: Pair<kotlin.String, (T) -> Boolean>): List<DescribedPredicate<T>> {
         return pairs.map { (first, second) -> DescribedPredicate(first, second) }
     }
 
@@ -320,15 +320,23 @@ object Validators {
      * or with [DescribedPredicate.description] if a [DescribedPredicate]
      * is given.
      */
-    class Predicated<R, T>(initialValue: T, val predicate: (T) -> Boolean) : Validator<R, T>(initialValue) {
+    class Requirements<R, T>(initValue: T, val predicate: (T) -> Boolean) : Validator<R, T>(initValue) {
 
         init {
-            validate(initialValue)
+            validate(initValue)
         }
 
         constructor(initValue: T, describedPredicate: DescribedPredicate<T>) : this(
             initValue, describedPredicate as (T) -> Boolean
         )
+
+        infix fun and(predicate: (T) -> Boolean): Requirements<R, T> {
+            return Requirements(super.initValue, this.predicate and predicate)
+        }
+
+        infix fun or(predicate: (T) -> Boolean): Requirements<R, T> {
+            return Requirements(super.initValue, this.predicate or predicate)
+        }
 
         override fun validate(data: T) {
             if (predicate is DescribedPredicate<*>) {
@@ -343,8 +351,8 @@ object Validators {
         }
     }
 
-    fun <R, T> ((T) -> Boolean).validator(initValue: T): Predicated<R, T> {
-        return Predicated(initValue, this)
+    fun <R, T> ((T) -> Boolean).validator(initValue: T): Requirements<R, T> {
+        return Requirements(initValue, this)
     }
 
     /**

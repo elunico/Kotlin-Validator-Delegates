@@ -14,8 +14,7 @@ import com.tom.validators.Validators.StringRules.no
 import com.tom.validators.Validators.StringRules.specialCharacters
 import com.tom.validators.Validators.StringRules.uppercaseLetters
 import com.tom.validators.Validators.between
-import com.tom.validators.Validators.ensuring
-import com.tom.validators.Validators.validator
+import com.tom.validators.Validators.ensure
 import com.tom.validators.and
 import java.util.*
 
@@ -26,8 +25,11 @@ import java.util.*
 
 class Account(owner: Person?) {
     var balance: Int by Validators.Integer(initValue = 0, minimum = 0)
-    val owner: Person? by (ensuring<Person?>("Account owner must be at least 18") { (it?.age ?: 0) >= 18 } and
-            ensuring("name is at least 2 letters long") { (it?.name?.length ?: 0) >= 2 }).validator(owner)
+    val owner: Person? by Validators.Requirements(
+        owner,
+        ensure<Person?>("Account owner is at least 18") {
+            (it?.age ?: 0) >= 18
+        } and ensure("Account balance is greater than 0") { it?.username != null })
 }
 
 class Person(val name: String, var age: Int, username: String, password: String) {
