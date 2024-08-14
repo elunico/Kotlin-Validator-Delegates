@@ -1,5 +1,9 @@
 package com.tom.validators
 
+import com.tom.validators.Validators.StringRules.CharClass
+import com.tom.validators.Validators.StringRules.no
+import com.tom.validators.Validators.StringRules.only
+import java.util.*
 import java.util.function.Predicate
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
@@ -21,11 +25,19 @@ infix fun <T> Validators.DescribedPredicate<T>.or(other: Validators.DescribedPre
     return Validators.DescribedPredicate(this.description + " || " + other.description) { this(it) || other(it) }
 }
 
+infix fun CharClass.or(other: CharClass): CharClass {
+    return CharClass.satisfying { this(it) || other(it) }
+}
+
 operator fun <T> ((T) -> Boolean).not(): (T) -> Boolean {
     return { !this(it) }
 }
 
 private fun <T> ((T) -> Boolean).jPredicate(): Predicate<T> = Predicate { this(it) }
+
+private fun <T> ((T) -> Boolean).withDescription(description: String): Validators.DescribedPredicate<T> {
+    return Validators.DescribedPredicate(description, this)
+}
 
 typealias Reason = String
 
@@ -52,6 +64,46 @@ object Validators {
 
 
     /**
+     * Interface describing all Validators. Classes which do not need to inherit a superclass should instead
+     * subclass the abstract call [BaseValidator] which provides additional features and implementation that makes
+     * creating a custom Validator easier.
+     *
+     * Classes which require a superclass other than this can implement [Validator] but then must
+     * implement their own [getValue] and [setValue]. _The implementer __must__ ensure [setValue] calls
+     * [validate]_
+     *
+     * See [BaseValidator] for more
+     * @see BaseValidator
+     */
+    interface Validator<R, T> : ReadWriteProperty<R, T> {
+        /**
+         * Overridden by subclasses to perform the validation required
+         * This is where all the validation of data must occur in the
+         * in subclasses.
+         * @throws IllegalArgumentException if data is not valid
+         * @return Unit if data is valid
+         */
+        @Throws(IllegalArgumentException::class)
+        fun validate(data: T)
+
+        /**
+         * Equivalent to [validate] but returns a Boolean instead of throwing an exception. Is NOT used by the class itself
+         * when used as a delegate which always throws an exception in [setValue] by calling [validate] but can be used
+         * by users of the class outside the delegate pattern when exceptions are undesirable
+         *
+         * This is a final method so that subclasses cannot introduce discrepancies between validate throwing an
+         * [IllegalArgumentException] and [isValid] returning false.
+         *
+         * Note that [isValid] WILL STILL THROW any exception that is NOT [IllegalArgumentException]
+         */
+        fun isValid(data: T): Boolean = try {
+            validate(data).let { true }
+        } catch (e: IllegalArgumentException) {
+            false
+        }
+    }
+
+    /**
      * Superclass for all Validating delegates. Requires an initialValue of type T
      * and has a [getValue] that works like a simple getter and a [setValue] that delegates
      * to the abstract [validate] method
@@ -60,15 +112,20 @@ object Validators {
      * the initial value at the end of their constructors
      * The contract of Validator classes is that if the initial is not valid,
      * the constructor will fail. Since the [validate] method is overridden
-     * by the subclasses, [Validator] cannot call validate on the [initValue]
+     * by the subclasses, [BaseValidator] cannot call validate on the [initValue]
      * because subclasses have not been initialized in the constructor for
      * Validator; it is therefore the responsibility of subclasses to call
      * [validate] on their initial values at the end of the constructor
      *
      * Classes can extend this class and override [validate] to create a Validator
      * [validate] will throw on invalid data see the method for more
+     *
+     * Classes which require a superclass other than this can implement [Validator] but then must
+     * implement their own [getValue] and [setValue]. _The implementer __must__ ensure [setValue] calls
+     * [validate]_
+     * @see Validator
      */
-    abstract class Validator<R, T>(protected var initValue: T) : ReadWriteProperty<R, T> {
+    abstract class BaseValidator<R, T>(protected var initValue: T) : Validator<R, T> {
 
         override operator fun getValue(thisRef: R, property: KProperty<*>): T {
             return initValue
@@ -78,22 +135,17 @@ object Validators {
             initValue = value.also { validate(it) }
         }
 
-        /**
-         * Overridden by subclasses to perform the validation required
-         * This is where all the validation of data must occur in the
-         * in subclasses.
-         * @throws IllegalArgumentException if data is not valid
-         * @return Unit if data is valid
-         */
-        @Throws(IllegalArgumentException::class)
-        abstract fun validate(data: T)
+        final override fun isValid(data: T): Boolean {
+            return super.isValid(data)
+        }
+
     }
 
     /**
      * A delegate which is a composite class composed of multiple predicates or [DescribedPredicate] tests
      * all of which must be satisfied by the values passed through the delegate
      */
-    class AllSatisfy<R, T>(initValue: T, vararg val predicates: (T) -> Boolean) : Validator<R, T>(initValue) {
+    class AllSatisfy<R, T>(initValue: T, vararg val predicates: (T) -> Boolean) : BaseValidator<R, T>(initValue) {
 
         init {
             validate(initValue)
@@ -110,13 +162,25 @@ object Validators {
                 }
             }
         }
+
+        infix fun and(other: AllSatisfy<R, T>) =
+            Requirements<R, T>(initValue) { t -> predicates.all { it(t) } && other.predicates.all { it(t) } }
+
+        infix fun or(other: AllSatisfy<R, T>) =
+            Requirements<R, T>(initValue) { t -> predicates.all { it(t) } || other.predicates.all { it(t) } }
+
+        infix fun and(other: AnySatisfy<R, T>) =
+            Requirements<R, T>(initValue) { t -> predicates.all { it(t) } && other.predicates.any { it(t) } }
+
+        infix fun or(other: AnySatisfy<R, T>) =
+            Requirements<R, T>(initValue) { t -> predicates.all { it(t) } || other.predicates.any { it(t) } }
     }
 
     /**
      * A delegate which is a composite class composed of multiple predicates or [DescribedPredicate] tests
      * any of which must be satisfied by the values passed through the delegate
      */
-    class AnySatisfy<R, T>(initValue: T, vararg val predicates: (T) -> Boolean) : Validator<R, T>(initValue) {
+    class AnySatisfy<R, T>(initValue: T, vararg val predicates: (T) -> Boolean) : BaseValidator<R, T>(initValue) {
 
         init {
             validate(initValue)
@@ -127,6 +191,18 @@ object Validators {
             throw IllegalArgumentException("Value $data does not satisfy any of its required predicates")
         }
 
+        infix fun and(other: AllSatisfy<R, T>) =
+            Requirements<R, T>(initValue) { t -> predicates.any { it(t) } && other.predicates.all { it(t) } }
+
+        infix fun or(other: AllSatisfy<R, T>) =
+            Requirements<R, T>(initValue) { t -> predicates.any { it(t) } || other.predicates.all { it(t) } }
+
+        infix fun and(other: AnySatisfy<R, T>) =
+            Requirements<R, T>(initValue) { t -> predicates.any { it(t) } && other.predicates.any { it(t) } }
+
+        infix fun or(other: AnySatisfy<R, T>) =
+            Requirements<R, T>(initValue) { t -> predicates.any { it(t) } || other.predicates.any { it(t) } }
+
         fun negate() = NoneSatisfy<R, T>(initValue, *predicates)
         operator fun not() = negate()
     }
@@ -135,7 +211,7 @@ object Validators {
      * A delegate which is a composite class composed of multiple predicates or [DescribedPredicate] tests
      * none of which must be satisfied by the values passed through the delegate
      */
-    class NoneSatisfy<R, T>(initValue: T, vararg val predicates: (T) -> Boolean) : Validator<R, T>(initValue) {
+    class NoneSatisfy<R, T>(initValue: T, vararg val predicates: (T) -> Boolean) : BaseValidator<R, T>(initValue) {
 
         init {
             validate(initValue)
@@ -169,14 +245,14 @@ object Validators {
      * It can also take a list of [DescribedPredicate]s which can be used as additional
      * tests on what is to be set
      *
-     * See [Validator] and [Validator.validate] for more about how validation is handled
+     * See [BaseValidator] and [BaseValidator.validate] for more about how validation is handled
      */
     class Integer<R>(
         initValue: Int,
         val minimum: Int = Int.MIN_VALUE,
         val maximum: Int = Int.MAX_VALUE,
         val predicates: List<DescribedPredicate<Int>> = listOf()
-    ) : Validator<R, Int>(initValue) {
+    ) : BaseValidator<R, Int>(initValue) {
 
         init {
             validate(initValue)
@@ -208,9 +284,9 @@ object Validators {
      * In either case it will only allow values passed to setValue that ARE present
      * in the given collection provided on construction
      *
-     * See [Validator] and [Validator.validate] for more about how validation is handled
+     * See [BaseValidator] and [BaseValidator.validate] for more about how validation is handled
      */
-    class AnyOf<R, T> internal constructor(initValue: T, val choices: Set<T>) : Validator<R, T>(initValue) {
+    class AnyOf<R, T> internal constructor(initValue: T, val choices: Set<T>) : BaseValidator<R, T>(initValue) {
 
         init {
             validate(initValue)
@@ -258,9 +334,9 @@ object Validators {
      * In either case it will only allow values passed to setValue that are NOT present
      * in the given collection provided on construction
      *
-     * See [Validator] and [Validator.validate] for more about how validation is handled
+     * See [BaseValidator] and [BaseValidator.validate] for more about how validation is handled
      */
-    class NoneOf<R, T> internal constructor(initialValue: T, val choices: Set<T>) : Validator<R, T>(initialValue) {
+    class NoneOf<R, T> internal constructor(initialValue: T, val choices: Set<T>) : BaseValidator<R, T>(initialValue) {
 
         init {
             validate(initialValue)
@@ -320,7 +396,7 @@ object Validators {
      * or with [DescribedPredicate.description] if a [DescribedPredicate]
      * is given.
      */
-    class Requirements<R, T>(initValue: T, val predicate: (T) -> Boolean) : Validator<R, T>(initValue) {
+    class Requirements<R, T>(initValue: T, val predicate: (T) -> Boolean) : BaseValidator<R, T>(initValue) {
 
         init {
             validate(initValue)
@@ -339,28 +415,24 @@ object Validators {
         }
 
         override fun validate(data: T) {
-            if (predicate is DescribedPredicate<*>) {
-                if (!predicate(data)) {
-                    throw IllegalArgumentException("$data did not satisfy the predicate: ${predicate.description}")
+            if (!predicate(data)) {
+                var message = "$data did not satisfy the predicate"
+                if (predicate is DescribedPredicate<*>) {
+                    message += ": ${predicate.description}"
                 }
-            } else {
-                if (!predicate(data)) {
-                    throw IllegalArgumentException("$data did not satisfy predicate")
-                }
+                throw IllegalArgumentException(message)
             }
         }
     }
 
-    fun <R, T> ((T) -> Boolean).validator(initValue: T): Requirements<R, T> {
-        return Requirements(initValue, this)
-    }
+    fun <R, T> ((T) -> Boolean).validator(initValue: T): Requirements<R, T> = Requirements(initValue, this)
 
     /**
      * A Constraint is a small class that represents a restriction on a
      * range of some <T> where T: Comparable<T>.
      *
      * This class is used by [String.lengthConstraint] and can be used by
-     * anyone subclassing [Validator] and works well with the utility
+     * anyone subclassing [BaseValidator] and works well with the utility
      * functions [atLeast], [atMost], [between], and [exactly] which are useful for
      * natural language construction of Constraint instances
      *
@@ -369,7 +441,7 @@ object Validators {
      * Note that minimum and maximum are both inclusive in this class. This also means
      * that if minimum == maximum then the Constraint repesents that single value only
      */
-    open class Constraint<T> where T : Comparable<T>, T : Any {
+    open class Constraint<T> : ClosedRange<T> where T : Comparable<T>, T : Any {
         // only null in object of unbound()
         // not checked in that subclass
         private var _minimum: T? = null
@@ -386,9 +458,7 @@ object Validators {
 
         private constructor()
 
-        open fun valid(value: T) = value in _minimum!!.._maximum!!
-
-        operator fun contains(value: T): Boolean = value in minimum..maximum
+        open fun valid(value: T) = contains(value)
 
         companion object {
             /**
@@ -400,45 +470,47 @@ object Validators {
                 override fun valid(value: T) = true
             }
         }
+
+        override val endInclusive: T
+            get() = maximum
+        override val start: T
+            get() = minimum
     }
 
     /**
      * Represents a range constraint. Built on Constraint<T> this validator accepts any value in a
      * range of any comparable type
      */
-    class RangeConstraint<R, T>(initValue: T, val constraint: Constraint<T>) :
-        Validator<R, T>(initValue) where T : Comparable<T> {
+    class ValueInRange<R, T>(initValue: T, val constraint: ClosedRange<T>) :
+        BaseValidator<R, T>(initValue) where T : Comparable<T> {
         init {
             validate(initValue)
         }
 
         override fun validate(data: T) {
-            if (constraint.valid(data)) {
-                return
+            if (data !in constraint) {
+                throw IllegalArgumentException("Value $data failed to satisfy constraint $constraint")
             }
-            throw IllegalArgumentException("Value $data failed to satisfy constraint $constraint")
         }
 
-        operator fun contains(other: T): Boolean {
-            return constraint.valid(other)
-        }
+        operator fun contains(other: T): Boolean = other in constraint
     }
 
     /**
      * Creates a new validator for a particular range
      */
-    fun <R, T> inRange(initValue: T, range: ClosedRange<T>): RangeConstraint<R, T> where T : Comparable<T> =
-        RangeConstraint(initValue, Constraint(range.start, range.endInclusive))
+    fun <R, T> inRange(initValue: T, range: ClosedRange<T>): ValueInRange<R, T> where T : Comparable<T> =
+        ValueInRange(initValue, Constraint(range.start, range.endInclusive))
 
     /**
      * Creates a new validator for a range using the helper functions [atLeast], [atMost], [between], and [exactly]
      */
-    fun <R, T> inRange(initValue: T, range: Constraint<T>): RangeConstraint<R, T> where T : Comparable<T> =
-        RangeConstraint(initValue, range)
+    fun <R, T> inRange(initValue: T, range: Constraint<T>): ValueInRange<R, T> where T : Comparable<T> =
+        ValueInRange(initValue, range)
 
     /**
      * atLeast is a utility function for creating particular classes that specify
-     * various requirements of existing subclasses of [Validator]. The sort of
+     * various requirements of existing subclasses of [BaseValidator]. The sort of
      * things it returns depends on its overloads. The single Int overload
      * (this one) returns a [Constraint]<Int> that specifies a minimum value of [n]
      * and a maximum value of [Int.MAX_VALUE].
@@ -471,7 +543,7 @@ object Validators {
 
     /**
      * atMost is a utility function for creating particular classes that specify
-     * various requirements of existing subclasses of [Validator]. The sort of
+     * various requirements of existing subclasses of [BaseValidator]. The sort of
      * things it returns depends on its overloads. The single Int overload
      * (this one) returns a [Constraint]<Int> that specifies a maximum value of [n]
      * and a minimum value of [Int.MIN_VALUE].
@@ -504,7 +576,7 @@ object Validators {
 
     /**
      * between is a utility function for creating particular classes that specify
-     * various requirements of existing subclasses of [Validator]. The sort of
+     * various requirements of existing subclasses of [BaseValidator]. The sort of
      * things it returns depends on its overloads.
      *
      * This is used primarily when constructing string length limits
@@ -611,31 +683,50 @@ object Validators {
          * Enumeration representing commonly used classes of Chars for use in [MustHave] objects in
          * [String] validators
          */
-        open class CharClass(val isMember: (Char) -> Boolean) : (Char) -> Boolean by isMember,
+        open class CharClass internal constructor(val isMember: (Char) -> Boolean) : (Char) -> Boolean by isMember,
             Predicate<Char> by isMember.jPredicate() {
 
-            //@formatter:off
-        companion object {
-            @JvmStatic val whitespace = CharClass(Char::isWhitespace)
-            @JvmStatic val newline = CharClass { it == '\n' || it == '\r' }
-            @JvmStatic val alphabetic = CharClass(Char::isLetter)
-            @JvmStatic val lowercaseLetters = CharClass(Char::isLowerCase)
-            @JvmStatic val uppercaseLetters = CharClass(Char::isUpperCase)
-            @JvmStatic val numbers = CharClass(Char::isDigit)
-            @JvmStatic val alphanumeric = CharClass(Char::isLetterOrDigit)
-            @JvmStatic val specialCharacters = CharClass(!Char::isLetterOrDigit and !Char::isWhitespace)
-        }
-        //@formatter:on
+            var description: kotlin.String? = null
 
-            /**
-             * Returns a new CharClass instance that will satisfy the condition passed to the function
-             * Used for natual-language predicate construction such as when saying
-             * `MustHave(no(charsSatisfying { it in 'A'..'M' } ))`
-             */
-            open fun charsSatisfying(condition: (Char) -> Boolean): CharClass = CharClass(condition)
+            fun described(description: kotlin.String) = this.apply { this.description = description }
+
+            companion object {
+                @JvmStatic
+                val whitespace = CharClass(Char::isWhitespace).described("whitespace")
+
+                @JvmStatic
+                val newline = CharClass { it == '\n' || it == '\r' }.described("new lines")
+
+                @JvmStatic
+                val alphabetic = CharClass(Char::isLetter).described("letter")
+
+                @JvmStatic
+                val lowercaseLetters = CharClass(Char::isLowerCase).described("lowercase letter")
+
+                @JvmStatic
+                val uppercaseLetters = CharClass(Char::isUpperCase).described("uppercae letter")
+
+                @JvmStatic
+                val numbers = CharClass(Char::isDigit).described("digit")
+
+                @JvmStatic
+                val alphanumeric = CharClass(Char::isLetterOrDigit).described("letter or digit")
+
+                @JvmStatic
+                val specialCharacters =
+                    CharClass(!Char::isLetterOrDigit and !Char::isWhitespace).described("special character")
+
+                /**
+                 * Returns a new CharClass instance that will satisfy the condition passed to the function
+                 * Used for natural-language predicate construction such as when saying
+                 * `MustHave(no(charsSatisfying { it in 'A'..'M' } ))`
+                 */
+                @JvmStatic
+                fun satisfying(condition: (Char) -> Boolean): CharClass = CharClass(condition)
+            }
 
             override fun toString(): kotlin.String {
-                return "CharClass[${this::isMember.name}]"
+                return "CharClass[${this.description}]"
             }
         }
 
@@ -667,6 +758,15 @@ object Validators {
                 }
                 return true to null
             }
+
+            companion object {
+                @JvmStatic
+                fun noRequirements() = object : MustHave() {
+                    override fun isValid(data: kotlin.String): Pair<Boolean, Reason?> {
+                        return true to null
+                    }
+                }
+            }
         }
 
 
@@ -679,7 +779,7 @@ object Validators {
 
             /**
              * Represents a map of [CharClass] to [Int] that specifies a string must contain
-             * at least a certain number of characters from a [CharClass]
+             * at least a certain number of characters from a [CharClass].
              */
             class AtLeast internal constructor(vararg pairs: Pair<CharClass, Int>) : StringContentsRule(*pairs) {
                 override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
@@ -694,7 +794,25 @@ object Validators {
 
             /**
              * Represents a map of [CharClass] to [Int] that specifies a string must contain
-             * at most a certain number of characters from a [CharClass]
+             * at only characters from a [CharClass].
+             */
+            class Only internal constructor(private val classes: CharClass) :
+                StringContentsRule(*arrayOf(Pair(classes, -1))) {
+                override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
+                    for (char in s) {
+                        if (!classes.isMember(char)) {
+                            return false to "String cannot consist of char '$char'"
+                        }
+                    }
+                    return true to null
+                }
+
+
+            }
+
+            /**
+             * Represents a map of [CharClass] to [Int] that specifies a string must contain
+             * at most a certain number of characters from a [CharClass].
              */
             class AtMost internal constructor(vararg pairs: Pair<CharClass, Int>) : StringContentsRule(*pairs) {
                 override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
@@ -709,7 +827,8 @@ object Validators {
 
             /**
              * Represents a map of [CharClass] to [Int] that specifies a string must contain
-             * exactly a certain number of characters from a [CharClass]
+             * exactly a certain number of characters from a [CharClass]. Rather than using an Int, [Int]
+             * is used so that classes can be checked for presence without specifying a number requirement
              */
             class Exactly internal constructor(vararg pairs: Pair<CharClass, Int>) : StringContentsRule(*pairs) {
                 override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
@@ -731,7 +850,7 @@ object Validators {
 
         /**
          * atLeast is a utility function for creating particular classes that specify
-         * various requirements of existing subclasses of [Validator]. The sort of
+         * various requirements of existing subclasses of [BaseValidator]. The sort of
          * things it returns depends on its overloads. The vararg pairs: [Pair]<[CharClass], [Int]>
          * overload (this overload) returns a [StringContentsRule.AtLeast] class
          * which is a mapping of [CharClass] to [Int]. This indicates
@@ -746,7 +865,7 @@ object Validators {
 
         /**
          * atMost is a utility function for creating particular classes that specify
-         * various requirements of existing subclasses of [Validator]. The sort of
+         * various requirements of existing subclasses of [BaseValidator]. The sort of
          * things it returns depends on its overloads. The vararg pairs: [Pair]<[CharClass], [Int]>
          * overload (this overload) returns a [StringContentsRule.AtMost] class
          * which is a mapping of [CharClass] to [Int]. This indicates
@@ -761,7 +880,7 @@ object Validators {
 
         /**
          * exactly is a utility function for creating particular classes that specify
-         * various requirements of existing subclasses of [Validator]. The sort of
+         * various requirements of existing subclasses of [BaseValidator]. The sort of
          * things it returns depends on its overloads. The vararg pairs: [Pair]<[CharClass], [Int]>
          * overload (this overload) returns a [StringContentsRule.Exactly] class
          * which is a mapping of [CharClass] to [Int]. This indicates
@@ -787,9 +906,15 @@ object Validators {
          * including user-defined subclasses if they operate with Constraints
          */
         fun no(vararg classes: CharClass) = exactly(*classes.map { it to 0 }.toTypedArray())
+
+        fun only(classes: CharClass) = StringContentsRule.Only(classes)
     }
 
-    open class LengthConstraint(private vararg val constraints: Constraint<Int>) {
+    /**
+     * Aggregate disjunctive collection of [Constraint] that are used on the [Validators.String] class
+     * to specify the required length of the string
+     */
+    open class LengthConstraint(private vararg val constraints: ClosedRange<Int>) {
         companion object {
             @JvmStatic
             fun unbound(): LengthConstraint = object : LengthConstraint() {
@@ -798,12 +923,12 @@ object Validators {
         }
 
         val minimum: Int
-            get() = constraints.minOf { it.minimum }
+            get() = constraints.minOf { it.start }
 
         val maximum: Int
-            get() = constraints.minOf { it.maximum }
+            get() = constraints.minOf { it.endInclusive }
 
-        open fun isValid(data: Int) = constraints.all { it.valid(data) }
+        open fun isValid(data: Int) = constraints.all { data in it }
     }
 
     /**
@@ -830,13 +955,13 @@ object Validators {
      * the extension properties on Int returning Pair<CharClass, Int>. See [Int.whitespace]
      * as an example
      *
-     * See [Validator] and [Validator.validate] for more about how validation is handled
+     * See [BaseValidator] and [BaseValidator.validate] for more about how validation is handled
      */
     class String<R>(
         initValue: kotlin.String,
         val lengthConstraint: LengthConstraint = LengthConstraint.unbound(),
         val mustHave: StringRules.MustHave
-    ) : Validator<R, kotlin.String>(initValue) {
+    ) : BaseValidator<R, kotlin.String>(initValue) {
 
         init {
             validate(initValue)
@@ -844,15 +969,35 @@ object Validators {
 
         override fun validate(data: kotlin.String) {
             if (!lengthConstraint.isValid(data.length)) {
-                throw IllegalArgumentException("$data length is invalid. Must be between ${lengthConstraint.minimum} and ${lengthConstraint.maximum}")
+                throw IllegalArgumentException("Length of \"$data\" is invalid: ${data.length} !in ${lengthConstraint.minimum}..${lengthConstraint.maximum}")
             }
             val (hasAllValid, reason) = mustHave.isValid(data)
             if (!hasAllValid) {
                 throw IllegalArgumentException(reason)
             }
         }
+
+        companion object {
+            @JvmStatic
+            fun <R> alphanumeric(initValue: kotlin.String): String<R> = String<R>(
+                initValue, LengthConstraint.unbound(), StringRules.MustHave(only(CharClass.alphanumeric))
+            )
+
+            @JvmStatic
+            fun <R> alphanumericAndWhitespace(initValue: kotlin.String, locale: Locale): String<R> = String(
+                initValue,
+                LengthConstraint.unbound(),
+                StringRules.MustHave(only(CharClass.alphanumeric or CharClass.whitespace))
+            )
+
+            @JvmStatic
+            fun <R> noWhitespace(initValue: kotlin.String): String<R> = String(
+                initValue, LengthConstraint.unbound(), StringRules.MustHave(no(CharClass.whitespace))
+            )
+        }
     }
 
+    // TODO: turn MustHave (and maybe all of String<R> into a DSL and limit scope of extensions and atLeast to the DSL
 
     /**
      * Makes the language more natural than `to` but is not necessary
