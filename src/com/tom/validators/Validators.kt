@@ -1,8 +1,12 @@
 package com.tom.validators
 
 import com.tom.validators.Validators.StringRules.CharClass
+import com.tom.validators.Validators.StringRules.StringContentsRule
+import com.tom.validators.Validators.StringRules.exactly
 import com.tom.validators.Validators.StringRules.no
 import com.tom.validators.Validators.StringRules.only
+import com.tom.validators.Validators.Validator
+import com.tom.validators.Validators.exactly
 import java.util.*
 import java.util.function.Predicate
 import kotlin.properties.ReadWriteProperty
@@ -39,6 +43,23 @@ private fun <T> ((T) -> Boolean).withDescription(description: String): Validator
     return Validators.DescribedPredicate(description, this)
 }
 
+/**
+ * Equivalent to [validate] but returns a Boolean instead of throwing an exception. Is NOT used by the class itself
+ * when used as a delegate which always throws an exception in [setValue] by calling [validate] but can be used
+ * by users of the class outside the delegate pattern when exceptions are undesirable
+ *
+ * This is a final method so that subclasses cannot introduce discrepancies between validate throwing an
+ * [IllegalArgumentException] and [isValid] returning false.
+ *
+ * Note that [isValid] WILL STILL THROW any exception that is NOT [IllegalArgumentException]
+ */
+fun <R, T> Validator<R, T>.isValid(data: T): Boolean =
+    try {
+        validate(data).let { true }
+    } catch (e: IllegalArgumentException) {
+        false
+    }
+
 typealias Reason = String
 
 /**
@@ -58,7 +79,7 @@ object Validators {
      * handle the is DescribedPredicate<*> case as [Requirements] does or simply treat it
      * as any other (T) -> Boolean
      */
-    data class DescribedPredicate<T>(
+    open class DescribedPredicate<T>(
         val description: kotlin.String, val predicate: (T) -> Boolean
     ) : (T) -> Boolean by predicate, Predicate<T> by predicate.jPredicate()
 
@@ -80,28 +101,15 @@ object Validators {
          * Overridden by subclasses to perform the validation required
          * This is where all the validation of data must occur in the
          * in subclasses.
+         *
+         * @see [isValid]
          * @throws IllegalArgumentException if data is not valid
          * @return Unit if data is valid
          */
         @Throws(IllegalArgumentException::class)
         fun validate(data: T)
-
-        /**
-         * Equivalent to [validate] but returns a Boolean instead of throwing an exception. Is NOT used by the class itself
-         * when used as a delegate which always throws an exception in [setValue] by calling [validate] but can be used
-         * by users of the class outside the delegate pattern when exceptions are undesirable
-         *
-         * This is a final method so that subclasses cannot introduce discrepancies between validate throwing an
-         * [IllegalArgumentException] and [isValid] returning false.
-         *
-         * Note that [isValid] WILL STILL THROW any exception that is NOT [IllegalArgumentException]
-         */
-        fun isValid(data: T): Boolean = try {
-            validate(data).let { true }
-        } catch (e: IllegalArgumentException) {
-            false
-        }
     }
+
 
     /**
      * Superclass for all Validating delegates. Requires an initialValue of type T
@@ -134,11 +142,6 @@ object Validators {
         override operator fun setValue(thisRef: R, property: KProperty<*>, value: T) {
             initValue = value.also { validate(it) }
         }
-
-        final override fun isValid(data: T): Boolean {
-            return super.isValid(data)
-        }
-
     }
 
     /**
@@ -259,15 +262,12 @@ object Validators {
         }
 
         override fun validate(data: Int) {
-            if (data < minimum || data > maximum) {
+            if (data < minimum || data > maximum)
                 throw IllegalArgumentException("Value $data is out of range. Must be $minimum <= value <= $maximum")
-            }
-            for (predicate in predicates) {
-                if (!predicate(data)) {
-                    throw IllegalArgumentException("$data is invalid. Predicate failed says: ${predicate.description}")
-                }
-            }
 
+            for (predicate in predicates)
+                if (!predicate(data))
+                    throw IllegalArgumentException("$data is invalid. Predicate failed says: ${predicate.description}")
         }
 
     }
@@ -425,13 +425,16 @@ object Validators {
         }
     }
 
-    fun <R, T> ((T) -> Boolean).validator(initValue: T): Requirements<R, T> = Requirements(initValue, this)
+    /**
+     * Returns a [Validator] object using the [initValue] which requires the values to satisfy the predicate
+     */
+    fun <R, T> ((T) -> Boolean).require(initValue: T): Requirements<R, T> = Requirements(initValue, this)
 
     /**
      * A Constraint is a small class that represents a restriction on a
      * range of some <T> where T: Comparable<T>.
      *
-     * This class is used by [String.lengthConstraint] and can be used by
+     * This class is used by [String.acceptableLength] and can be used by
      * anyone subclassing [BaseValidator] and works well with the utility
      * functions [atLeast], [atMost], [between], and [exactly] which are useful for
      * natural language construction of Constraint instances
@@ -459,6 +462,10 @@ object Validators {
         private constructor()
 
         open fun valid(value: T) = contains(value)
+
+        override fun toString(): kotlin.String {
+            return "$start..$endInclusive"
+        }
 
         companion object {
             /**
@@ -507,6 +514,18 @@ object Validators {
      */
     fun <R, T> inRange(initValue: T, range: Constraint<T>): ValueInRange<R, T> where T : Comparable<T> =
         ValueInRange(initValue, range)
+
+    /**
+     * Convenience method for creating [AcceptableLength] objects for [String] using integers
+     */
+    val Int.charactersLong: AcceptableLength
+        get() = AcceptableLength(this..this)
+
+    /**
+     * Convenience method for creating [AcceptableLength] objects for [String] using closed ranges
+     */
+    val ClosedRange<Int>.charactersLong: AcceptableLength
+        get() = AcceptableLength(this)
 
     /**
      * atLeast is a utility function for creating particular classes that specify
@@ -771,81 +790,34 @@ object Validators {
 
 
         /**
-         * A stand in for [Map] of CharClass to Ints so that there can be a sealed class hierarchy
-         *
-         * Used by [MustHave] for [String] Validators
+         * Used by [MustHave] for [String] Validators. TODO: Fix this
          */
-        sealed class StringContentsRule(vararg pairs: Pair<CharClass, Int>) : Map<CharClass, Int> by mapOf(*pairs) {
+        class StringContentsRule(
+            val isAcceptable: (actualCount: Int, expectedCount: Int) -> Boolean,
+            vararg pairs: Pair<CharClass, Int>
+        ) : Map<CharClass, Int> by mapOf(*pairs) {
 
-            /**
-             * Represents a map of [CharClass] to [Int] that specifies a string must contain
-             * at least a certain number of characters from a [CharClass].
-             */
-            class AtLeast internal constructor(vararg pairs: Pair<CharClass, Int>) : StringContentsRule(*pairs) {
-                override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
-                    for ((type, count) in entries) {
-                        if (s.count { type.isMember(it) } < count) {
-                            return false to "String requires at least $count characters of class $type"
-                        }
-                    }
-                    return true to null
-                }
+            companion object {
+                fun isAtLeast(count: Int, expected: Int): Boolean = count >= expected
+                fun isAtMost(count: Int, expected: Int): Boolean = count <= expected
+                fun isExactly(count: Int, expected: Int): Boolean = count == expected
+                fun isAnyAmount(count: Int, expected: Int): Boolean = count == -1
             }
 
-            /**
-             * Represents a map of [CharClass] to [Int] that specifies a string must contain
-             * at only characters from a [CharClass].
-             */
-            class Only internal constructor(private val classes: CharClass) :
-                StringContentsRule(*arrayOf(Pair(classes, -1))) {
-                override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
-                    for (char in s) {
-                        if (!classes.isMember(char)) {
-                            return false to "String cannot consist of char '$char'"
-                        }
+            fun test(s: kotlin.String): Pair<Boolean, Reason?> {
+                for ((type, expectedCount) in entries) {
+                    if (!isAcceptable(s.count(type.isMember), expectedCount)) {
+                        return false to "String did not satisfy char expected count of $expectedCount of type $type"
                     }
-                    return true to null
                 }
+                return true to null
 
-
-            }
-
-            /**
-             * Represents a map of [CharClass] to [Int] that specifies a string must contain
-             * at most a certain number of characters from a [CharClass].
-             */
-            class AtMost internal constructor(vararg pairs: Pair<CharClass, Int>) : StringContentsRule(*pairs) {
-                override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
-                    for ((type, count) in entries) {
-                        if (s.count { type.isMember(it) } > count) {
-                            return false to "String requires at most $count characters of class $type"
-                        }
-                    }
-                    return true to null
-                }
-            }
-
-            /**
-             * Represents a map of [CharClass] to [Int] that specifies a string must contain
-             * exactly a certain number of characters from a [CharClass]. Rather than using an Int, [Int]
-             * is used so that classes can be checked for presence without specifying a number requirement
-             */
-            class Exactly internal constructor(vararg pairs: Pair<CharClass, Int>) : StringContentsRule(*pairs) {
-                override fun test(s: kotlin.String): Pair<Boolean, Reason?> {
-                    for ((type, count) in entries) {
-                        if (s.count { type.isMember(it) } != count) {
-                            return false to "String requires exactly $count characters of class $type"
-                        }
-                    }
-                    return true to null
-                }
             }
 
             override fun toString(): kotlin.String {
                 return "[${entries.joinToString(", ") { (key, value) -> "$key: $value" }}]"
             }
 
-            abstract fun test(s: kotlin.String): Pair<Boolean, Reason?>
         }
 
         /**
@@ -861,7 +833,7 @@ object Validators {
          * but it can be used for any class that requires a [StringContentsRule] instance
          * including user-defined subclasses if they operate with Constraints
          */
-        fun atLeast(vararg pairs: Pair<CharClass, Int>) = StringContentsRule.AtLeast(*pairs)
+        fun atLeast(vararg pairs: Pair<CharClass, Int>) = StringContentsRule(StringContentsRule::isAtLeast, *pairs)
 
         /**
          * atMost is a utility function for creating particular classes that specify
@@ -876,7 +848,7 @@ object Validators {
          * but it can be used for any class that requires a [StringContentsRule] instance
          * including user-defined subclasses if they operate with Constraints
          */
-        fun atMost(vararg pairs: Pair<CharClass, Int>) = StringContentsRule.AtMost(*pairs)
+        fun atMost(vararg pairs: Pair<CharClass, Int>) = StringContentsRule(StringContentsRule::isAtMost, *pairs)
 
         /**
          * exactly is a utility function for creating particular classes that specify
@@ -891,7 +863,7 @@ object Validators {
          * but it can be used for any class that requires a [StringContentsRule] instance
          * including user-defined subclasses if they operate with Constraints
          */
-        fun exactly(vararg pairs: Pair<CharClass, Int>) = StringContentsRule.Exactly(*pairs)
+        fun exactly(vararg pairs: Pair<CharClass, Int>) = StringContentsRule(StringContentsRule::isExactly, *pairs)
 
         /**
          * no is a utility function for creating [StringContentsRule] instances
@@ -907,28 +879,42 @@ object Validators {
          */
         fun no(vararg classes: CharClass) = exactly(*classes.map { it to 0 }.toTypedArray())
 
-        fun only(classes: CharClass) = StringContentsRule.Only(classes)
+        /**
+         * only is a utility function for creating [StringContentsRule] instances
+         * This function returns an object that indicates to the [String]
+         * validator that the [kotlin.String] it is validating must ONLY contain chars that satify
+         * the characters that match the given CharClass
+         *
+         * This is used primarily when constructing string [MustHave] rules
+         * but it can be used for any class that requires a [StringContentsRule] instance
+         * including user-defined subclasses if they operate with Constraints
+         */
+        fun only(charClass: CharClass) = StringContentsRule(StringContentsRule::isAnyAmount, Pair(charClass, -1))
     }
 
     /**
      * Aggregate disjunctive collection of [Constraint] that are used on the [Validators.String] class
      * to specify the required length of the string
      */
-    open class LengthConstraint(private vararg val constraints: ClosedRange<Int>) {
+    open class AcceptableLength(private vararg val constraints: ClosedRange<Int>) {
         companion object {
             @JvmStatic
-            fun unbound(): LengthConstraint = object : LengthConstraint() {
+            fun unbound(): AcceptableLength = object : AcceptableLength() {
                 override fun isValid(data: Int) = true
             }
         }
 
-        val minimum: Int
-            get() = constraints.minOf { it.start }
+        override fun toString(): kotlin.String {
+            var s = StringBuilder()
+            for (constraint in constraints) {
+                s.append(constraint)
+                s.append(" OR ")
+            }
+            s.delete(s.length - 4, s.length)
+            return s.toString()
+        }
 
-        val maximum: Int
-            get() = constraints.minOf { it.endInclusive }
-
-        open fun isValid(data: Int) = constraints.all { data in it }
+        open fun isValid(data: Int) = constraints.any { data in it }
     }
 
     /**
@@ -959,7 +945,7 @@ object Validators {
      */
     class String<R>(
         initValue: kotlin.String,
-        val lengthConstraint: LengthConstraint = LengthConstraint.unbound(),
+        val acceptableLength: AcceptableLength = AcceptableLength.unbound(),
         val mustHave: StringRules.MustHave
     ) : BaseValidator<R, kotlin.String>(initValue) {
 
@@ -968,8 +954,8 @@ object Validators {
         }
 
         override fun validate(data: kotlin.String) {
-            if (!lengthConstraint.isValid(data.length)) {
-                throw IllegalArgumentException("Length of \"$data\" is invalid: ${data.length} !in ${lengthConstraint.minimum}..${lengthConstraint.maximum}")
+            if (!acceptableLength.isValid(data.length)) {
+                throw IllegalArgumentException("Length of \"$data\" (${data.length}) is invalid: Length must be in one of the ranges: $acceptableLength")
             }
             val (hasAllValid, reason) = mustHave.isValid(data)
             if (!hasAllValid) {
@@ -980,24 +966,25 @@ object Validators {
         companion object {
             @JvmStatic
             fun <R> alphanumeric(initValue: kotlin.String): String<R> = String<R>(
-                initValue, LengthConstraint.unbound(), StringRules.MustHave(only(CharClass.alphanumeric))
+                initValue, AcceptableLength.unbound(), StringRules.MustHave(only(CharClass.alphanumeric))
             )
 
             @JvmStatic
             fun <R> alphanumericAndWhitespace(initValue: kotlin.String, locale: Locale): String<R> = String(
                 initValue,
-                LengthConstraint.unbound(),
+                AcceptableLength.unbound(),
                 StringRules.MustHave(only(CharClass.alphanumeric or CharClass.whitespace))
             )
 
             @JvmStatic
             fun <R> noWhitespace(initValue: kotlin.String): String<R> = String(
-                initValue, LengthConstraint.unbound(), StringRules.MustHave(no(CharClass.whitespace))
+                initValue, AcceptableLength.unbound(), StringRules.MustHave(no(CharClass.whitespace))
             )
         }
     }
 
     // TODO: turn MustHave (and maybe all of String<R> into a DSL and limit scope of extensions and atLeast to the DSL
+
 
     /**
      * Makes the language more natural than `to` but is not necessary

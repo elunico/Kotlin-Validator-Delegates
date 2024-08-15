@@ -1,7 +1,7 @@
 package com.tom.validators.example
 
 import com.tom.validators.Validators
-import com.tom.validators.Validators.LengthConstraint
+import com.tom.validators.Validators.AcceptableLength
 import com.tom.validators.Validators.StringRules.CharClass.Companion.alphabetic
 import com.tom.validators.Validators.StringRules.CharClass.Companion.specialCharacters
 import com.tom.validators.Validators.StringRules.CharClass.Companion.whitespace
@@ -36,7 +36,7 @@ class Person(val name: String, var age: Int, username: String, password: String)
 
     var username: String by Validators.String(
         username,
-        LengthConstraint(between(5, 35)),
+        AcceptableLength(between(5, 35)),
         MustHave(no(specialCharacters, whitespace))
     )
 
@@ -48,7 +48,7 @@ class Person(val name: String, var age: Int, username: String, password: String)
 
     var password: String by Validators.String(
         password,
-        LengthConstraint(between(6, 20)),
+        AcceptableLength(between(6, 20)),
         MustHave(atLeast(1.specialCharacters, 1.uppercaseLetters, 1.lowercaseLetters, 1.digits))
     )
 }

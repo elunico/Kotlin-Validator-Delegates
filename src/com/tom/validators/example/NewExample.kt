@@ -1,7 +1,7 @@
 package com.tom.validators.example
 
 import com.tom.validators.Validators
-import com.tom.validators.Validators.LengthConstraint
+import com.tom.validators.Validators.AcceptableLength
 import com.tom.validators.Validators.StringRules.CharClass
 import com.tom.validators.Validators.StringRules.MustHave
 import com.tom.validators.Validators.StringRules.atLeast
@@ -10,25 +10,35 @@ import com.tom.validators.Validators.StringRules.lowercaseLetters
 import com.tom.validators.Validators.StringRules.no
 import com.tom.validators.Validators.StringRules.specialCharacters
 import com.tom.validators.Validators.StringRules.uppercaseLetters
-import com.tom.validators.Validators.between
+import com.tom.validators.Validators.atLeast
+import com.tom.validators.Validators.charactersLong
 
 //fun <T> T.printed(): T = this.also { println(it) }
+
+fun <T> trying(block: () -> T): T? = try {
+    block()
+} catch (e: Exception) {
+    null
+}
 
 fun <T> T.printed(): T = this.also(::println)
 
 class BankAccountUser(user: String, pw: String) {
     val username: String by Validators.String(
         user,
-        LengthConstraint(between(8, 30)),
+//        AcceptableLength(between(8, 30)),
+        (8..30).charactersLong,
         MustHave(
             no(CharClass.whitespace),
             no(CharClass.specialCharacters)
         )
+
     )
 
     val password: String by Validators.String(
         pw,
-        LengthConstraint(10..32),
+//        AcceptableLength(atLeast(8)),
+        atLeast(8).charactersLong,
         MustHave(
             atLeast(1.specialCharacters, 1.uppercaseLetters, 1.lowercaseLetters, 1.digits),
             no(CharClass.whitespace)
@@ -37,7 +47,7 @@ class BankAccountUser(user: String, pw: String) {
 
     val description: String by Validators.String(
         "",
-        LengthConstraint.unbound(),
+        AcceptableLength.unbound(),
         MustHave.noRequirements()
     )
 
@@ -46,5 +56,7 @@ class BankAccountUser(user: String, pw: String) {
 
 fun main() {
 
+    println(BankAccountUser("tom", "Password12345!"))
+    println(trying { BankAccountUser("ThomasPov", "Password! 2") })
 }
 
