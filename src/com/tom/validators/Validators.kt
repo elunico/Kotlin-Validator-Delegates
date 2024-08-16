@@ -1,10 +1,7 @@
 package com.tom.validators
 
 import com.tom.validators.Validators.StringRules.CharClass
-import com.tom.validators.Validators.StringRules.StringContentsRule
-import com.tom.validators.Validators.StringRules.exactly
-import com.tom.validators.Validators.StringRules.no
-import com.tom.validators.Validators.StringRules.only
+import com.tom.validators.Validators.StringRules.MustHave.*
 import com.tom.validators.Validators.Validator
 import com.tom.validators.Validators.exactly
 import java.util.*
@@ -62,8 +59,10 @@ fun <R, T> Validator<R, T>.isValid(data: T): Boolean =
 
 typealias Reason = String
 
+object Utilities
+
 /**
- * Object containing the classes and helper functions that work as validators
+ * Object containing the validators that can be used as delegates
  * The actual object is not used, it is only used for namespacing
  */
 object Validators {
@@ -636,69 +635,6 @@ object Validators {
 
 
         /**
-         * This extension function associates numbers and user defined [CharClass]es
-         * to facilitate the creation of [MustHave] objects for use in
-         * describing [String] validators
-         */
-        fun Int.charsSatisfying(predicate: (Char) -> Boolean): Pair<CharClass, Int> = (CharClass(predicate) to this)
-
-        /**
-         * These extension properties associate numbers and [CharClass]es
-         * to facilitate the creation of [MustHave] objects for use in
-         * describing [String] validators
-         */
-        val Int.whitespace: Pair<CharClass, Int> get() = (CharClass.whitespace to this)
-
-        /**
-         * These extension properties associate numbers and [CharClass]es
-         * to facilitate the creation of [MustHave] objects for use in
-         * describing [String] validators
-         */
-        val Int.newline: Pair<CharClass, Int> get() = (CharClass.newline to this)
-
-        /**
-         * These extension properties associate numbers and [CharClass]es
-         * to facilitate the creation of [MustHave] objects for use in
-         * describing [String] validators
-         */
-        val Int.alphabetic: Pair<CharClass, Int> get() = (CharClass.alphabetic to this)
-
-        /**
-         * These extension properties associate numbers and [CharClass]es
-         * to facilitate the creation of [MustHave] objects for use in
-         * describing [String] validators
-         */
-        val Int.lowercaseLetters: Pair<CharClass, Int> get() = (CharClass.lowercaseLetters to this)
-
-        /**
-         * These extension properties associate numbers and [CharClass]es
-         * to facilitate the creation of [MustHave] objects for use in
-         * describing [String] validators
-         */
-        val Int.uppercaseLetters: Pair<CharClass, Int> get() = (CharClass.uppercaseLetters to this)
-
-        /**
-         * These extension properties associate numbers and [CharClass]es
-         * to facilitate the creation of [MustHave] objects for use in
-         * describing [String] validators
-         */
-        val Int.digits: Pair<CharClass, Int> get() = (CharClass.numbers to this)
-
-        /**
-         * These extension properties associate numbers and [CharClass]es
-         * to facilitate the creation of [MustHave] objects for use in
-         * describing [String] validators
-         */
-        val Int.alphanumeric: Pair<CharClass, Int> get() = (CharClass.alphanumeric to this)
-
-        /**
-         * These extension properties associate numbers and [CharClass]es
-         * to facilitate the creation of [MustHave] objects for use in
-         * describing [String] validators
-         */
-        val Int.specialCharacters: Pair<CharClass, Int> get() = (CharClass.specialCharacters to this)
-
-        /**
          * Enumeration representing commonly used classes of Chars for use in [MustHave] objects in
          * [String] validators
          */
@@ -753,23 +689,21 @@ object Validators {
          * MustHave is a class that describes which characters and in what quantity are
          * required of a [String].
          *
-         * [StringContentsRule] is nothing more than a stand in for [Map] but it is a sealed
-         * class so that it can be subclasses into [atLeast], [exactly], and [atMost] (not
-         * to be confused with the similarly named helper functions)
-         *
-         * This class interacts well with [atLeast], [exactly], and [atMost] helper functions
-         * which create the classes of similar name. This allows you to specify which types
-         * of characters and in what quantity are required by the string. There is also
-         * the [no] function which is a simple alias for exactly(0.<CharClass>).
+         * This class uses the [AtLeast], [AtMost], [Exactly], and [None] classes to help build specific requirements
          *
          * This class is usually constructed by using the extension properties for CharClass
          * on Int and the 4 helper functions which are then passed to the constructor
          */
-        open class MustHave(vararg rules: StringContentsRule) {
-            open val maps: List<StringContentsRule> = rules.toList()
+        open class MustHave(builder: MustHave.() -> Unit) {
+            protected val rules: MutableList<StringContentsRule> = mutableListOf()
+
+            init {
+                this.builder()
+            }
+
 
             open fun isValid(data: kotlin.String): Pair<Boolean, Reason?> {
-                for (rule in maps) {
+                for (rule in rules) {
                     val (valid, reason) = rule.test(data)
                     if (!valid) {
                         return valid to reason
@@ -780,10 +714,326 @@ object Validators {
 
             companion object {
                 @JvmStatic
-                fun noRequirements() = object : MustHave() {
+                fun noRequirements() = object : MustHave({}) {
                     override fun isValid(data: kotlin.String): Pair<Boolean, Reason?> {
                         return true to null
                     }
+                }
+            }
+
+            /**
+             * Used as a super class for all the [AtLeast], [AtMost], [Exactly], [Only] DSL builders so that they
+             * all have access to the extension function on [Int]
+             */
+            abstract inner class QuantitySpec {
+                abstract fun comparator(): (Int, Int) -> Boolean
+
+
+                /**
+                 * Returns a new CharClass instance that will satisfy the condition passed to the function
+                 * Used for natural-language predicate construction such as when saying
+                 * `MustHave(no(charsSatisfying { it in 'A'..'M' } ))`
+                 */
+                fun satisfying(condition: (Char) -> Boolean) {
+                    this@MustHave.rules.add(StringContentsRule(comparator(), CharClass(condition) to -1))
+                }
+
+                /**
+                 * This extension function associates numbers and user defined [CharClass]es
+                 * to facilitate the creation of [MustHave] objects for use in
+                 * describing [String] validators
+                 */
+                fun Int.charsSatisfying(predicate: (Char) -> Boolean): Pair<CharClass, Int> =
+                    (CharClass(predicate) to this)
+
+                /**
+                 * These extension properties associate numbers and [CharClass]es
+                 * to facilitate the creation of [MustHave] objects for use in
+                 * describing [String] validators
+                 */
+                val Int.whitespace: Unit
+                    get() {
+                        this@MustHave.rules.add(StringContentsRule(comparator(), (CharClass.whitespace to this)))
+                    }
+
+                /**
+                 * These extension properties associate numbers and [CharClass]es
+                 * to facilitate the creation of [MustHave] objects for use in
+                 * describing [String] validators
+                 */
+                val Int.newline: Unit
+                    get() {
+                        this@MustHave.rules.add(StringContentsRule(comparator(), (CharClass.newline to this)))
+                    }
+
+                /**
+                 * These extension properties associate numbers and [CharClass]es
+                 * to facilitate the creation of [MustHave] objects for use in
+                 * describing [String] validators
+                 */
+                val Int.alphabetic: Unit
+                    get() {
+                        this@MustHave.rules.add(StringContentsRule(comparator(), (CharClass.alphabetic to this)))
+                    }
+
+                /**
+                 * These extension properties associate numbers and [CharClass]es
+                 * to facilitate the creation of [MustHave] objects for use in
+                 * describing [String] validators
+                 */
+                val Int.lowercaseLetters: Unit
+                    get() {
+                        this@MustHave.rules.add(StringContentsRule(comparator(), (CharClass.lowercaseLetters to this)))
+                    }
+
+                /**
+                 * These extension properties associate numbers and [CharClass]es
+                 * to facilitate the creation of [MustHave] objects for use in
+                 * describing [String] validators
+                 */
+                val Int.uppercaseLetters: Unit
+                    get() {
+                        this@MustHave.rules.add(StringContentsRule(comparator(), (CharClass.uppercaseLetters to this)))
+                    }
+
+                /**
+                 * These extension properties associate numbers and [CharClass]es
+                 * to facilitate the creation of [MustHave] objects for use in
+                 * describing [String] validators
+                 */
+                val Int.digits: Unit
+                    get() {
+                        this@MustHave.rules.add(StringContentsRule(comparator(), (CharClass.numbers to this)))
+                    }
+
+                /**
+                 * These extension properties associate numbers and [CharClass]es
+                 * to facilitate the creation of [MustHave] objects for use in
+                 * describing [String] validators
+                 */
+                val Int.alphanumeric: Unit
+                    get() {
+                        this@MustHave.rules.add(StringContentsRule(comparator(), (CharClass.alphanumeric to this)))
+                    }
+
+                /**
+                 * These extension properties associate numbers and [CharClass]es
+                 * to facilitate the creation of [MustHave] objects for use in
+                 * describing [String] validators
+                 */
+                val Int.specialCharacters: Unit
+                    get() {
+                        this@MustHave.rules.add(StringContentsRule(comparator(), (CharClass.specialCharacters to this)))
+                    }
+            }
+
+            /**
+             * AtLeast is a DSL builder class that specifies
+             * various requirements of existing subclasses of [BaseValidator].
+             *
+             * This is used primarily when constructing string [MustHave] rules where it serves as a part of the
+             * DSL to construct String rules
+             */
+            inner class AtLeast(builder: AtLeast.() -> Unit) : QuantitySpec() {
+                init {
+                    this.builder()
+                }
+
+                override fun comparator(): (Int, Int) -> Boolean {
+                    return { act, exp -> act >= exp }
+                }
+            }
+
+            /**
+             * AtMost is a DSL builder class that specifies
+             * various requirements of existing subclasses of [BaseValidator].
+             *
+             * This is used primarily when constructing string [MustHave] rules where it serves as a part of the
+             * DSL to construct String rules
+             */
+            inner class AtMost(builder: AtMost.() -> Unit) : QuantitySpec() {
+                init {
+                    this.builder()
+                }
+
+                override fun comparator(): (Int, Int) -> Boolean {
+                    return { act, exp -> act <= exp }
+                }
+            }
+
+            /**
+             * Exactly is a DSL builder class that specifies
+             * various requirements of existing subclasses of [BaseValidator].
+             *
+             * This is used primarily when constructing string [MustHave] rules where it serves as a part of the
+             * DSL to construct String rules
+             */
+            inner class Exactly(builder: Exactly.() -> Unit) : QuantitySpec() {
+                init {
+                    this.builder()
+                }
+
+                override fun comparator(): (Int, Int) -> Boolean {
+                    return { act, exp -> act == exp }
+                }
+            }
+
+            /**
+             * Used as a super class for [No] and [Exactly] so that they can access [CharClass]es with the side-effect
+             * of adding them to the class itself
+             */
+            abstract inner class NoQuantity : QuantitySpec() {
+                /**
+                 * These overloads are needed here so that [No] and [Exactly] can use [CharClass]es without numbers
+                 * but still have them added to the [MustHave] specification
+                 *
+                 * Redundant so that other uses cna still access [CharClass] constants from the class itself
+                 */
+                val whitespace: Unit
+                    get() {
+                        this@MustHave.rules.add(
+                            StringContentsRule(
+                                comparator(),
+                                CharClass(Char::isWhitespace).described("whitespace") to -1
+                            )
+                        )
+                    }
+
+                /**
+                 * See [whitespace]
+                 */
+                val newline: Unit
+                    get() {
+                        this@MustHave.rules.add(
+                            StringContentsRule(
+                                comparator(),
+                                CharClass { it == '\n' || it == '\r' }.described("new lines") to -1
+                            )
+                        )
+                    }
+
+                /**
+                 * See [whitespace]
+                 */
+                val alphabetic: Unit
+                    get() {
+                        this@MustHave.rules.add(
+                            StringContentsRule(
+                                comparator(),
+                                CharClass(Char::isLetter).described("letter") to -1
+                            )
+                        )
+                    }
+
+                /**
+                 * See [whitespace]
+                 */
+                val lowercaseLetters: Unit
+                    get() {
+                        this@MustHave.rules.add(
+                            StringContentsRule(
+                                comparator(),
+                                CharClass(Char::isLowerCase).described("lowercase letter") to -1
+                            )
+                        )
+                    }
+
+                /**
+                 * See [whitespace]
+                 */
+                val uppercaseLetters: Unit
+                    get() {
+                        this@MustHave.rules.add(
+                            StringContentsRule(
+                                comparator(),
+                                CharClass(Char::isUpperCase).described("uppercae letter") to -1
+                            )
+                        )
+                    }
+
+                /**
+                 * See [whitespace]
+                 */
+                val numbers: Unit
+                    get() {
+                        this@MustHave.rules.add(
+                            StringContentsRule(
+                                comparator(),
+                                CharClass(Char::isDigit).described("digit") to -1
+                            )
+                        )
+                    }
+
+                /**
+                 * See [whitespace]
+                 */
+                val alphanumeric: Unit
+                    get() {
+                        this@MustHave.rules.add(
+                            StringContentsRule(
+                                comparator(),
+                                CharClass(Char::isLetterOrDigit).described("letter or digit") to -1
+                            )
+                        )
+                    }
+
+                /**
+                 * See [whitespace]
+                 */
+                val specialCharacters: Unit
+                    get() {
+                        this@MustHave.rules.add(
+                            StringContentsRule(
+                                comparator(),
+                                CharClass(!Char::isLetterOrDigit and !Char::isWhitespace).described("special character") to -1
+                            )
+                        )
+                    }
+
+            }
+
+            /**
+             * No is a DSL builder class that specifies
+             * various requirements of existing subclasses of [BaseValidator].
+             *
+             * This is used primarily when constructing string [MustHave] rules where it serves as a part of the
+             * DSL to construct String rules
+             */
+            inner class No(builder: No.() -> Unit) : NoQuantity() {
+                init {
+                    this.builder()
+                }
+
+                override fun comparator(): (Int, Int) -> Boolean {
+                    return { act, exp -> act == 0 }
+                }
+
+
+            }
+
+
+            /**
+             * Only is a DSL builder class that specifies
+             * various requirements of existing subclasses of [BaseValidator].
+             *
+             * This is used primarily when constructing string [MustHave] rules where it serves as a part of the
+             * DSL to construct String rules
+             */
+            inner class Only(builder: Only.() -> Unit) : NoQuantity() {
+                init {
+                    this.builder()
+                }
+
+                infix fun CharClass.or(other: CharClass) {
+                    this@MustHave.rules.add(
+                        StringContentsRule(
+                            comparator(),
+                            CharClass.satisfying { this(it) || other(it) } to -1)
+                    )
+                }
+
+                override fun comparator(): (Int, Int) -> Boolean {
+                    return { act, exp -> act == -1 }
                 }
             }
         }
@@ -796,13 +1046,6 @@ object Validators {
             val isAcceptable: (actualCount: Int, expectedCount: Int) -> Boolean,
             vararg pairs: Pair<CharClass, Int>
         ) : Map<CharClass, Int> by mapOf(*pairs) {
-
-            companion object {
-                fun isAtLeast(count: Int, expected: Int): Boolean = count >= expected
-                fun isAtMost(count: Int, expected: Int): Boolean = count <= expected
-                fun isExactly(count: Int, expected: Int): Boolean = count == expected
-                fun isAnyAmount(count: Int, expected: Int): Boolean = count == -1
-            }
 
             fun test(s: kotlin.String): Pair<Boolean, Reason?> {
                 for ((type, expectedCount) in entries) {
@@ -820,76 +1063,7 @@ object Validators {
 
         }
 
-        /**
-         * atLeast is a utility function for creating particular classes that specify
-         * various requirements of existing subclasses of [BaseValidator]. The sort of
-         * things it returns depends on its overloads. The vararg pairs: [Pair]<[CharClass], [Int]>
-         * overload (this overload) returns a [StringContentsRule.AtLeast] class
-         * which is a mapping of [CharClass] to [Int]. This indicates
-         * to the [String] validator that the [kotlin.String] must have at least
-         * the given Int number of characters that match the given CharClass
-         *
-         * This is used primarily when constructing string [MustHave] rules
-         * but it can be used for any class that requires a [StringContentsRule] instance
-         * including user-defined subclasses if they operate with Constraints
-         */
-        fun atLeast(vararg pairs: Pair<CharClass, Int>) = StringContentsRule(StringContentsRule::isAtLeast, *pairs)
 
-        /**
-         * atMost is a utility function for creating particular classes that specify
-         * various requirements of existing subclasses of [BaseValidator]. The sort of
-         * things it returns depends on its overloads. The vararg pairs: [Pair]<[CharClass], [Int]>
-         * overload (this overload) returns a [StringContentsRule.AtMost] class
-         * which is a mapping of [CharClass] to [Int]. This indicates
-         * to the [String] validator that the [kotlin.String] must have at most
-         * the given Int number of characters that match the given CharClass
-         *
-         * This is used primarily when constructing string [MustHave] rules
-         * but it can be used for any class that requires a [StringContentsRule] instance
-         * including user-defined subclasses if they operate with Constraints
-         */
-        fun atMost(vararg pairs: Pair<CharClass, Int>) = StringContentsRule(StringContentsRule::isAtMost, *pairs)
-
-        /**
-         * exactly is a utility function for creating particular classes that specify
-         * various requirements of existing subclasses of [BaseValidator]. The sort of
-         * things it returns depends on its overloads. The vararg pairs: [Pair]<[CharClass], [Int]>
-         * overload (this overload) returns a [StringContentsRule.Exactly] class
-         * which is a mapping of [CharClass] to [Int]. This indicates
-         * to the [String] validator that the [kotlin.String] must have exactly
-         * the given Int number of characters that match the given CharClass
-         *
-         * This is used primarily when constructing string [MustHave] rules
-         * but it can be used for any class that requires a [StringContentsRule] instance
-         * including user-defined subclasses if they operate with Constraints
-         */
-        fun exactly(vararg pairs: Pair<CharClass, Int>) = StringContentsRule(StringContentsRule::isExactly, *pairs)
-
-        /**
-         * no is a utility function for creating [StringContentsRule] instances
-         * This function returns an object that indicates to the [String]
-         * validator that the [kotlin.String] it is validating must NOT contain any
-         * of the characters that match the given CharClass
-         *
-         * It is an alias for calling [exactly] with 0 as the number for all [CharClass]es
-         *
-         * This is used primarily when constructing string [MustHave] rules
-         * but it can be used for any class that requires a [StringContentsRule] instance
-         * including user-defined subclasses if they operate with Constraints
-         */
-        fun no(vararg classes: CharClass) = exactly(*classes.map { it to 0 }.toTypedArray())
-
-        /**
-         * only is a utility function for creating [StringContentsRule] instances
-         * This function returns an object that indicates to the [String]
-         * validator that the [kotlin.String] it is validating must ONLY contain chars that satify
-         * the characters that match the given CharClass
-         *
-         * This is used primarily when constructing string [MustHave] rules
-         * but it can be used for any class that requires a [StringContentsRule] instance
-         * including user-defined subclasses if they operate with Constraints
-         */
-        fun only(charClass: CharClass) = StringContentsRule(StringContentsRule::isAnyAmount, Pair(charClass, -1))
     }
 
     /**
@@ -966,25 +1140,25 @@ object Validators {
         companion object {
             @JvmStatic
             fun <R> alphanumeric(initValue: kotlin.String): String<R> = String<R>(
-                initValue, AcceptableLength.unbound(), StringRules.MustHave(only(CharClass.alphanumeric))
+                initValue, AcceptableLength.unbound(), StringRules.MustHave { Only { CharClass.alphanumeric } }
             )
 
             @JvmStatic
+
             fun <R> alphanumericAndWhitespace(initValue: kotlin.String, locale: Locale): String<R> = String(
                 initValue,
                 AcceptableLength.unbound(),
-                StringRules.MustHave(only(CharClass.alphanumeric or CharClass.whitespace))
+                StringRules.MustHave {
+                    Only { CharClass.alphanumeric or CharClass.whitespace }
+                }
             )
 
             @JvmStatic
             fun <R> noWhitespace(initValue: kotlin.String): String<R> = String(
-                initValue, AcceptableLength.unbound(), StringRules.MustHave(no(CharClass.whitespace))
+                initValue, AcceptableLength.unbound(), StringRules.MustHave { No { CharClass.whitespace } }
             )
         }
     }
-
-    // TODO: turn MustHave (and maybe all of String<R> into a DSL and limit scope of extensions and atLeast to the DSL
-
 
     /**
      * Makes the language more natural than `to` but is not necessary

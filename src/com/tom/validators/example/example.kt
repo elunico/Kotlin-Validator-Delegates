@@ -2,17 +2,7 @@ package com.tom.validators.example
 
 import com.tom.validators.Validators
 import com.tom.validators.Validators.AcceptableLength
-import com.tom.validators.Validators.StringRules.CharClass.Companion.alphabetic
-import com.tom.validators.Validators.StringRules.CharClass.Companion.specialCharacters
-import com.tom.validators.Validators.StringRules.CharClass.Companion.whitespace
 import com.tom.validators.Validators.StringRules.MustHave
-import com.tom.validators.Validators.StringRules.atLeast
-import com.tom.validators.Validators.StringRules.digits
-import com.tom.validators.Validators.StringRules.exactly
-import com.tom.validators.Validators.StringRules.lowercaseLetters
-import com.tom.validators.Validators.StringRules.no
-import com.tom.validators.Validators.StringRules.specialCharacters
-import com.tom.validators.Validators.StringRules.uppercaseLetters
 import com.tom.validators.Validators.between
 import com.tom.validators.Validators.ensure
 import com.tom.validators.and
@@ -37,24 +27,33 @@ class Person(val name: String, var age: Int, username: String, password: String)
     var username: String by Validators.String(
         username,
         AcceptableLength(between(5, 35)),
-        MustHave(no(specialCharacters, whitespace))
+        MustHave {
+            No {
+                specialCharacters
+                whitespace
+            }
+        }
+//        MustHave.noRequirements()
+//        MustHave(no(specialCharacters, whitespace))
     )
 
     var loudName: String by Validators.String(
         username.uppercase(Locale.getDefault()),
         // mustHave = MustHave(exactly(username.count{it.isLetter()}.charsSatisfying { it in 'A'..'Z' }))
-        mustHave = MustHave(exactly(username.count(alphabetic).uppercaseLetters))
+//        mustHave = MustHave(exactly(username.count(alphabetic).uppercaseLetters))
+        mustHave = MustHave.noRequirements()
     )
 
     var password: String by Validators.String(
         password,
         AcceptableLength(between(6, 20)),
-        MustHave(atLeast(1.specialCharacters, 1.uppercaseLetters, 1.lowercaseLetters, 1.digits))
+//        MustHave(atLeast(1.specialCharacters, 1.uppercaseLetters, 1.lowercaseLetters, 1.digits))
+        MustHave.noRequirements()
     )
 }
 
 class Page(text: String) {
-    val text: String by Validators.String(text, mustHave = MustHave(no(specialCharacters)))
+//    val text: String by Validators.String(text, mustHave = MustHave(no(specialCharacters)))
 
     var background: String by Validators.AnyOf("red", "blue", "green", "yellow", "white")
 

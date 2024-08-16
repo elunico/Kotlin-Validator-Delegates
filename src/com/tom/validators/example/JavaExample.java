@@ -4,6 +4,7 @@ import com.tom.validators.Validators;
 import com.tom.validators.ValidatorsKt;
 
 public class JavaExample {
+
     public static void main(String[] args) {
         var v = new Validators.String<Object>(
                 "Hello",
