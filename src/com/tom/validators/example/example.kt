@@ -1,11 +1,10 @@
 package com.tom.validators.example
 
+import com.tom.validators.StringRules.AcceptableLength
+import com.tom.validators.StringRules.MustHave
 import com.tom.validators.Validators
-import com.tom.validators.Validators.AcceptableLength
-import com.tom.validators.Validators.StringRules.MustHave
-import com.tom.validators.Validators.between
-import com.tom.validators.Validators.ensure
-import com.tom.validators.and
+import com.tom.validators.between
+import com.tom.validators.ensure
 import java.util.*
 
 
@@ -33,31 +32,36 @@ class Person(val name: String, var age: Int, username: String, password: String)
                 whitespace
             }
         }
-//        MustHave.noRequirements()
-//        MustHave(no(specialCharacters, whitespace))
     )
 
     var loudName: String by Validators.String(
         username.uppercase(Locale.getDefault()),
-        // mustHave = MustHave(exactly(username.count{it.isLetter()}.charsSatisfying { it in 'A'..'Z' }))
-//        mustHave = MustHave(exactly(username.count(alphabetic).uppercaseLetters))
-        mustHave = MustHave.noRequirements()
+        AcceptableLength.unbound(),
+        MustHave { Exactly { username.length.uppercaseLetters } }
     )
 
     var password: String by Validators.String(
         password,
         AcceptableLength(between(6, 20)),
-//        MustHave(atLeast(1.specialCharacters, 1.uppercaseLetters, 1.lowercaseLetters, 1.digits))
-        MustHave.noRequirements()
+        MustHave {
+            AtLeast {
+                1.specialCharacters
+                1.uppercaseLetters
+                1.lowercaseLetters
+                1.digits
+            }
+        }
     )
 }
 
 class Page(text: String) {
-//    val text: String by Validators.String(text, mustHave = MustHave(no(specialCharacters)))
+    val text: String by Validators.String(text, mustHave = MustHave { No { specialCharacters } })
 
     var background: String by Validators.AnyOf("red", "blue", "green", "yellow", "white")
 
     var margin: Double by Validators.inRange(0.5, 0.05..1.5)
+
+    var grade: Char by Validators.inRange('A', 'A'..'F')
 
 }
 

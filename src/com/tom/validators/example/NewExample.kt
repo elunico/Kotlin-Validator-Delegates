@@ -1,10 +1,10 @@
 package com.tom.validators.example
 
+import com.tom.validators.StringRules.AcceptableLength
+import com.tom.validators.StringRules.MustHave
+import com.tom.validators.StringRules.charactersLong
 import com.tom.validators.Validators
-import com.tom.validators.Validators.AcceptableLength
-import com.tom.validators.Validators.StringRules.MustHave
-import com.tom.validators.Validators.atLeast
-import com.tom.validators.Validators.charactersLong
+import com.tom.validators.atLeast
 
 //fun <T> T.printed(): T = this.also { println(it) }
 
