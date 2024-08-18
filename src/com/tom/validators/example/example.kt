@@ -1,10 +1,6 @@
 package com.tom.validators.example
 
-import com.tom.validators.StringRules.AcceptableLength
-import com.tom.validators.StringRules.MustHave
-import com.tom.validators.Validators
-import com.tom.validators.between
-import com.tom.validators.ensure
+import com.tom.validators.*
 import java.util.*
 
 
@@ -66,6 +62,7 @@ class Page(text: String) {
 }
 
 fun main() {
+
 
     val mainPage = Page("Some sample text")
     mainPage.background = "white"

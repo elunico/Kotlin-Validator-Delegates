@@ -1,12 +1,9 @@
 package com.tom.validators.example
 
-import com.tom.validators.StringRules.AcceptableLength
-import com.tom.validators.StringRules.MustHave
-import com.tom.validators.StringRules.charactersLong
-import com.tom.validators.Validators
-import com.tom.validators.atLeast
+import com.tom.validators.*
 
 //fun <T> T.printed(): T = this.also { println(it) }
+
 
 fun <T> trying(block: () -> T): T? = try {
     block()
