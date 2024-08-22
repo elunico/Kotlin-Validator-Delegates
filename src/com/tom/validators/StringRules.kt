@@ -385,7 +385,7 @@ class StringContentsRule(
  * Aggregate disjunctive collection of [Constraint] that are used on the [Validators.String] class
  * to specify the required length of the string
  */
-open class AcceptableLength(private vararg val constraints: ClosedRange<Int>) {
+open class AcceptableLength(private vararg val constraints: EndPoints<Int>) {
     companion object {
         @JvmStatic
         fun unbound(): AcceptableLength = object : AcceptableLength() {
@@ -415,7 +415,7 @@ val Int.charactersLong: AcceptableLength
 /**
  * Convenience method for creating [AcceptableLength] objects for [String] using closed ranges
  */
-val ClosedRange<Int>.charactersLong: AcceptableLength
+val EndPoints<Int>.charactersLong: AcceptableLength
     get() = AcceptableLength(this)
 
 /**

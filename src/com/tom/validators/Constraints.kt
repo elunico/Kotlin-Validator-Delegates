@@ -1,14 +1,17 @@
 package com.tom.validators
 
 
-/**
- * A closed range includes its endpoints. It may or may not have upper or lower limits
- */
-interface ClosedRange<T> where T : Comparable<T>, T : Any {
+interface EndPoints<T> where T : Comparable<T>, T : Any {
     val lowerBound: T?
     val upperBound: T?
 
     operator fun contains(value: T): Boolean
+}
+
+/**
+ * A closed range includes its endpoints. It may or may not have upper or lower limits
+ */
+interface ClosedRange<T> : EndPoints<T> where T : Comparable<T>, T : Any {
     operator fun contains(other: ClosedRange<T>): Boolean {
         return this.covers(other)
     }

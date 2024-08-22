@@ -149,7 +149,7 @@ object Validators {
      * Represents a range constraint. Built on Constraint<T> this validator accepts any value in a
      * range of any comparable type
      */
-    class ValueInRange<R, T>(initValue: T, val constraint: ClosedRange<T>) :
+    class ValueInRange<R, T>(initValue: T, val constraint: EndPoints<T>) :
         BaseValidator<R, T>(initValue) where T : Comparable<T> {
         init {
             validate(initValue)
@@ -214,9 +214,7 @@ object Validators {
         }
 
         override fun validate(data: kotlin.String) {
-            if (!acceptableLength.isValid(data.length)) {
-                throw IllegalArgumentException("Length of \"$data\" (${data.length}) is invalid: Length must be in one of the ranges: $acceptableLength")
-            }
+            require(acceptableLength.isValid(data.length)) { "Length of \"$data\" (${data.length}) is invalid: Length must be in one of the ranges: $acceptableLength" }
             val (hasAllValid, reason) = mustHave.isValid(data)
             require(hasAllValid) { reason ?: "" }
         }
